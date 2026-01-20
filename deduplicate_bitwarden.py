@@ -107,34 +107,61 @@ def deduplicate_bitwarden_export(input_file, output_file=None, summary_file=None
     
     # Group items by a composite key for deduplication
     unique_items = {}
+
+    from urllib.parse import urlparse
+
+    def normalize_uri(uri):
+        if not uri:
+            return ''
+
+        uri = uri.strip().lower().rstrip('/')
+
+        # Ensure scheme exists for urlparse
+        if '://' not in uri:
+            uri = 'https://' + uri
+
+        parsed = urlparse(uri)
+        host = parsed.hostname or ''
+
+        # Reduce subdomains to base domain (e.g. vault.bitwarden.com -> bitwarden.com)
+        parts = host.split('.')
+        if len(parts) > 2:
+            host = '.'.join(parts[-2:])
+
+        return host
+
     for item in data.get('items', []):
-        # Create a composite key for deduplication
-        # Using name, type, and login info if available
-        key_parts = [
-            item.get('name', ''),
-            str(item.get('type', ''))
-        ]
-        
+        item_type = str(item.get('type', ''))
         login = item.get('login', {})
+
+        username = ''
+        uris = []
+
         if login:
-            username = login.get('username', '')
-            if username:
-                key_parts.append(username)
-            
+            username = (login.get('username') or '').strip().lower()
             uris = login.get('uris', [])
-            for uri_obj in uris:
-                uri = uri_obj.get('uri', '')
-                if uri:
-                    key_parts.append(uri)
-        
-        key = '|'.join(key_parts)
-        
-        if key and key not in unique_items:
-            # Update folder ID reference if needed
-            folder_id = item.get('folderId', '')
-            if folder_id and folder_id in folder_id_mapping:
-                item['folderId'] = folder_id_mapping[folder_id]
-            unique_items[key] = item
+
+        normalized_uris = []
+        for uri_obj in uris:
+            uri = normalize_uri(uri_obj.get('uri', ''))
+            if uri:
+                normalized_uris.append(uri)
+
+        # Fallback for items without URI
+        if not normalized_uris:
+            normalized_uris.append('')
+
+        # Build keys per URI so same credentials + same site deduplicate
+        for uri in normalized_uris:
+            key = f"{item_type}|{username}|{uri}"
+
+            if key not in unique_items:
+                folder_id = item.get('folderId', '')
+                if folder_id and folder_id in folder_id_mapping:
+                    item['folderId'] = folder_id_mapping[folder_id]
+
+                unique_items[key] = item
+                break
     
     # Replace the original items list with the deduplicated list
     data['items'] = list(unique_items.values())
