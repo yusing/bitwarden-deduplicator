@@ -1,140 +1,69 @@
-# Bitwarden JSON Export Deduplicator
+# Bitwarden JSON Export Merger and Deduplicator
 
-A Python utility to remove duplicate folders and items from Bitwarden JSON export files.
-
-## Overview
-
-If you've been using Bitwarden for a while, you might have accumulated duplicate entries in your vault. This can happen when importing from multiple sources, syncing issues, or manual entry errors. This tool helps clean up your Bitwarden vault by removing duplicates from the JSON export file.
-
-The script identifies duplicates based on:
-- For folders: Folder names
-- For items: A composite key of name, type, username, and URIs
-
-## Features
-
-- Removes duplicate folders and items from Bitwarden JSON exports
-- Preserves the first occurrence of each unique entry
-- Maintains references between items and folders
-- Generates detailed summary reports
-- Command-line interface with customizable options
-- No external dependencies (uses only Python standard library)
-
-## Installation
-
-No installation is required. Simply download the script and run it with Python 3.6 or higher.
-
-```bash
-# Clone the repository
-git clone https://github.com/biplobice/bitwarden-deduplicator.git
-
-# Navigate to the directory
-cd bitwarden-deduplicator
-
-# Make the script executable (Unix/Linux/macOS)
-chmod +x deduplicate_bitwarden.py
-```
+Merge one or more unencrypted personal Bitwarden JSON exports into a new JSON file,
+removing duplicate folders and entries. Uses only the Python 3 standard library.
 
 ## Usage
 
-### Basic Usage
+```bash
+python3 deduplicate_bitwarden.py first_export.json second_export.json -o merged.json
+python3 deduplicate_bitwarden.py single_export.json
+```
+
+- Pass one or more input files in order. Earlier entries supply the retained name and folder.
+- `-o, --output`: new output path. Defaults to the first input's stem plus
+  `_merged_deduplicated.json` for multiple files or `_deduplicated.json` for one.
+- `-s, --summary`: optional new Markdown report containing counts and file paths, not vault values.
+- `-q, --quiet`: suppress progress and counts. Errors still appear on stderr.
+- Existing output files and inputs are never overwritten. Output permissions are owner-only.
+
+For the two exports in this directory:
 
 ```bash
-python deduplicate_bitwarden.py your_bitwarden_export.json
+python3 deduplicate_bitwarden.py bitwarden_export_20260907102015.json bitwarden_export_20260907102713.json -o merged_deduplicated.json
 ```
 
-This will create a deduplicated file named `your_bitwarden_export_deduplicated.json` in the same directory.
+## Duplicate rules
 
-### Advanced Options
+- Folder names and any extra folder properties must match. All original folder IDs
+  are mapped to retained folders, separately for each source file.
+- Logins match when they share at least one full URL (including its match setting)
+  and all other saved details agree, except the display name and bookkeeping fields.
+  Every URL is indexed, including URLs discovered through another duplicate.
+- Passwords and usernames are case-sensitive. Different passwords, notes, custom
+  fields, TOTP secrets, passkeys, organization ownership, or other saved details keep
+  entries separate. Missing and empty optional fields compare equally.
+- For URLs without an explicit match mode, web scheme/host case and empty root paths
+  are normalized for comparison. Explicit match modes are compared verbatim. Subdomains,
+  ports, paths, query strings, and HTTP versus HTTPS remain distinct. Other URI formats
+  are compared exactly. This avoids combining unrelated sites or accounts.
+- Cards, identities, secure notes, and logins without URLs match by saved content,
+  including their name, not just their item type.
+- IDs, folder placement, and creation/revision timestamps do not determine duplicates.
+  The first entry supplies these values. All distinct URLs and password-history records
+  are retained; favorites and the stronger reprompt setting are preserved. A later
+  folder fills an empty earlier folder. Conflicting IDs on retained items are replaced.
+- Conflicting top-level metadata, encrypted exports, and missing folder references are
+  rejected rather than silently discarded.
+
+This intentionally retains conflicting versions rather than guessing which secret is
+correct. The merged file does not modify your live vault. Importing into an already
+populated vault can create duplicates again; review your import destination first.
+
+## Security
+
+Exports and the merged output contain plaintext secrets. Keep them local and secure.
+Normal progress output contains only counts, never entry details. Do not commit vault
+exports or generated output to version control.
+
+## Tests
 
 ```bash
-python deduplicate_bitwarden.py your_bitwarden_export.json -o custom_output.json -s summary.md -q
+python3 -m unittest discover -s tests -v
 ```
 
-#### Command-line Arguments
-
-- `input_file`: Path to the Bitwarden JSON export file (required)
-- `-o, --output`: Path to save the deduplicated JSON file (default: input_file_deduplicated.json)
-- `-s, --summary`: Path to save the deduplication summary in Markdown format
-- `-q, --quiet`: Suppress progress output
-
-## Example
-
-### Input
-
-A Bitwarden JSON export file with duplicate folders and items.
-
-### Output
-
-1. A deduplicated JSON file that can be imported back into Bitwarden
-2. (Optional) A summary report in Markdown format
-
-### Sample Summary Report
-
-```markdown
-# Bitwarden JSON Deduplication Summary
-
-## Original File
-- Filename: bitwarden_export.json
-- Size: 1,379,851 bytes (1.32 MB)
-- Folders: 88
-- Items: 1,794
-
-## Deduplicated File
-- Filename: bitwarden_export_deduplicated.json
-- Size: 798,668 bytes (0.76 MB)
-- Folders: 46
-- Items: 1,015
-
-## Results
-- Removed 42 duplicate folders (47.7% reduction)
-- Removed 779 duplicate items (43.4% reduction)
-- Reduced file size by 581,183 bytes (42.1% reduction)
-
-## Method
-The deduplication was performed using a Python script that:
-1. Identified duplicate folders based on folder names
-2. Identified duplicate items based on a composite key of name, type, username, and URIs
-3. Preserved the first occurrence of each unique entry
-4. Maintained references between items and folders
-
-Generated on: 2025-08-06 13:45:22
-```
-
-## How to Export/Import Bitwarden Data
-
-### Exporting from Bitwarden
-
-1. Log in to your Bitwarden vault
-2. Go to "Tools" > "Export Vault"
-3. Choose "JSON (Unencrypted)" as the file format
-4. Enter your master password and click "Export Vault"
-5. Save the JSON file to your computer
-
-### Importing back to Bitwarden
-
-1. Log in to your Bitwarden vault
-2. Go to "Tools" > "Import Data"
-3. Select "Bitwarden (json)" as the file format
-4. Choose your deduplicated JSON file
-5. Click "Import Data"
-
-## Security Considerations
-
-- The script processes unencrypted Bitwarden JSON exports, which contain sensitive information
-- Always handle these files securely and delete them after use
-- Run the script on a trusted computer
-- Consider using the `-q` (quiet) option to prevent sensitive information from appearing in terminal output
+Tests use synthetic vaults only.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+MIT. See LICENSE.
